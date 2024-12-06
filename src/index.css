@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
+*{
+  margin:  0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+
+.rr{
+  border : 2px solid red;
+}
+
+.bb{
+  border : 2px solid blue;
+}
+
+.gg{
+  border : 2px solid green;
+}
