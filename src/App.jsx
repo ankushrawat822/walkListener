@@ -8,7 +8,7 @@ function App() {
   return (
     <>
       
-        <p className='bg-red-100'> click </p>
+        <p className='bg-red-100 text-center'>Walk Listner</p>
         <Player></Player>
     </>
   )

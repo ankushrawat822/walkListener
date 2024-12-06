@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react'
+import React, { useRef, useState, useEffect } from 'react'
 import { FaPause, FaVolumeUp, FaVolumeMute, FaVolumeDown } from "react-icons/fa";
 import audio from './assets/music.mp3'
 
@@ -10,6 +10,15 @@ const Player = () => {
     const [duration, setDuration] = useState(0);
     const [volume, setVolume] = useState(1); // Volume ranges from 0 to 1
     const [isMuted, setIsMuted] = useState(false);
+    
+    // New state for motion tracking
+    const [isMotionEnabled, setIsMotionEnabled] = useState(false);
+    const [lastAcceleration, setLastAcceleration] = useState(null);
+    const motionThresholds = {
+        walk: { min: 1, max: 5 },     // Light movement
+        jog: { min: 5, max: 10 },      // Moderate movement
+        sprint: { min: 10, max: 20 }   // High intensity movement
+    };
 
     // Format time to MM:SS
     const formatTime = (timeInSeconds) => {
@@ -29,77 +38,147 @@ const Player = () => {
       }
     };
 
+    // Toggle motion-based volume control
+    const toggleMotionControl = () => {
+        if ('DeviceMotionEvent' in window) {
+            if (!isMotionEnabled) {
+                // Request permission for motion events (required in iOS)
+                if (typeof DeviceMotionEvent.requestPermission === 'function') {
+                    DeviceMotionEvent.requestPermission()
+                        .then(response => {
+                            if (response === 'granted') {
+                                window.addEventListener('devicemotion', handleDeviceMotion);
+                                setIsMotionEnabled(true);
+                            } else {
+                                alert('Motion sensor permission denied');
+                            }
+                        })
+                        .catch(console.error);
+                } else {
+                    // For browsers that don't require explicit permission
+                    window.addEventListener('devicemotion', handleDeviceMotion);
+                    setIsMotionEnabled(true);
+                }
+            } else {
+                // Disable motion control
+                window.removeEventListener('devicemotion', handleDeviceMotion);
+                setIsMotionEnabled(false);
+            }
+        } else {
+            alert('Device motion not supported on this device');
+        }
+    };
+
+    // Calculate movement intensity and adjust volume
+    const handleDeviceMotion = (event) => {
+        const { acceleration } = event;
+        
+        if (acceleration.x === null) return; // Some devices return null
+
+        // Calculate total acceleration magnitude
+        const totalAcceleration = Math.sqrt(
+            acceleration.x ** 2 + 
+            acceleration.y ** 2 + 
+            acceleration.z ** 2
+        );
+
+        // Determine movement intensity
+        let newVolume = volume;
+        if (totalAcceleration >= motionThresholds.sprint.min) {
+            newVolume = 1; // Full volume during high intensity
+        } else if (totalAcceleration >= motionThresholds.jog.min) {
+            newVolume = 0.7; // Moderate volume during jogging
+        } else if (totalAcceleration >= motionThresholds.walk.min) {
+            newVolume = 0.3; // Low volume during walking
+        } else {
+            newVolume = 0.1; // Minimal volume when stationary
+        }
+
+        // Update volume
+        if (audioRef.current && !isMuted) {
+            audioRef.current.volume = newVolume;
+            setVolume(newVolume);
+        }
+
+        setLastAcceleration(totalAcceleration);
+    };
+
+    // Rest of the previous component's methods remain the same...
+    // (decreaseVolume, increaseVolume, toggleMute, etc.)
+
+
     // Volume control functions
     const decreaseVolume = () => {
-      if (audioRef.current) {
-        const newVolume = Math.max(0, volume - 0.1);
-        setVolume(newVolume);
-        audioRef.current.volume = newVolume;
-        setIsMuted(newVolume === 0);
-      }
-    };
-
-    const increaseVolume = () => {
-      if (audioRef.current) {
-        const newVolume = Math.min(1, volume + 0.1);
-        setVolume(newVolume);
-        audioRef.current.volume = newVolume;
-        setIsMuted(false);
-      }
-    };
-
-    const toggleMute = () => {
-      if (audioRef.current) {
-        if (isMuted) {
-          // Unmute and restore previous volume
-          audioRef.current.volume = volume;
-          setIsMuted(false);
-        } else {
-          // Mute
-          audioRef.current.volume = 0;
-          setIsMuted(true);
+        if (audioRef.current) {
+          const newVolume = Math.max(0, volume - 0.1);
+          setVolume(newVolume);
+          audioRef.current.volume = newVolume;
+          setIsMuted(newVolume === 0);
         }
-      }
-    };
+      };
   
-    // Update progress and current time
-    const handleTimeUpdate = () => {
-      if (audioRef.current) {
-        const progressPercent = 
-          (audioRef.current.currentTime / audioRef.current.duration) * 100;
-        setProgress(progressPercent);
-        setCurrentTime(audioRef.current.currentTime);
-      }
-    };
+      const increaseVolume = () => {
+        if (audioRef.current) {
+          const newVolume = Math.min(1, volume + 0.1);
+          setVolume(newVolume);
+          audioRef.current.volume = newVolume;
+          setIsMuted(false);
+        }
+      };
   
-    // Set duration when metadata is loaded
-    const handleLoadedMetadata = () => {
-      if (audioRef.current) {
-        setDuration(audioRef.current.duration);
-      }
-    };
+      const toggleMute = () => {
+        if (audioRef.current) {
+          if (isMuted) {
+            // Unmute and restore previous volume
+            audioRef.current.volume = volume;
+            setIsMuted(false);
+          } else {
+            // Mute
+            audioRef.current.volume = 0;
+            setIsMuted(true);
+          }
+        }
+      };
+    
+      // Update progress and current time
+      const handleTimeUpdate = () => {
+        if (audioRef.current) {
+          const progressPercent = 
+            (audioRef.current.currentTime / audioRef.current.duration) * 100;
+          setProgress(progressPercent);
+          setCurrentTime(audioRef.current.currentTime);
+        }
+      };
+    
+      // Set duration when metadata is loaded
+      const handleLoadedMetadata = () => {
+        if (audioRef.current) {
+          setDuration(audioRef.current.duration);
+        }
+      };
+    
+      // Handle progress bar click to seek
+      const handleProgressBarClick = (e) => {
+        const progressBar = e.currentTarget;
+        const clickPosition = e.nativeEvent.offsetX;
+        const progressBarWidth = progressBar.clientWidth;
+        const clickPositionPercent = (clickPosition / progressBarWidth) * 100;
+        
+        if (audioRef.current) {
+          const newTime = (clickPositionPercent / 100) * audioRef.current.duration;
+          audioRef.current.currentTime = newTime;
+          setProgress(clickPositionPercent);
+        }
+      };
   
-    // Handle progress bar click to seek
-    const handleProgressBarClick = (e) => {
-      const progressBar = e.currentTarget;
-      const clickPosition = e.nativeEvent.offsetX;
-      const progressBarWidth = progressBar.clientWidth;
-      const clickPositionPercent = (clickPosition / progressBarWidth) * 100;
-      
-      if (audioRef.current) {
-        const newTime = (clickPositionPercent / 100) * audioRef.current.duration;
-        audioRef.current.currentTime = newTime;
-        setProgress(clickPositionPercent);
-      }
-    };
-
-    // Determine volume icon based on current volume state
-    const VolumeIcon = () => {
-      if (isMuted) return <FaVolumeMute />;
-      if (volume < 0.3) return <FaVolumeMute />;
-      if (volume < 0.6) return <FaVolumeDown />;
-      return <FaVolumeUp />;
-    };
+      // Determine volume icon based on current volume state
+      const VolumeIcon = () => {
+        if (isMuted) return <FaVolumeMute />;
+        if (volume < 0.3) return <FaVolumeMute />;
+        if (volume < 0.6) return <FaVolumeDown />;
+        return <FaVolumeUp />;
+      };
+  
 
     return (
     <>
@@ -112,7 +191,8 @@ const Player = () => {
       />
 
       <div className="bg-gray-100 p-4 flex justify-center items-center h-screen">
-        <div className="bg-white p-8 rounded-lg shadow-md w-80">
+        <div className="bg-white p-6 rounded-lg shadow-md w-80">
+          {/* Existing UI components... */}
           {/* Album Cover */}
           <img src="https://picsum.photos/200" alt="idk - Highvyn, Taylor Shin" className="w-64 h-64 mx-auto rounded-lg mb-4 shadow-lg shadow-teal-50"/>
           
@@ -159,26 +239,31 @@ const Player = () => {
                 <path d="M22.75 5C22.75 4.58579 22.4142 4.25 22 4.25C21.5858 4.25 21.25 4.58579 21.25 5V19C21.25 19.4142 21.5858 19.75 22 19.75C22.4142 19.75 22.75 19.4142 22.75 19V5Z" fill="#000000"></path>
               </svg>
             </button>
+
+            </div>
+          
+          {/* Motion Control Toggle */}
+          <div className="mt-4 flex justify-center">
+            <button 
+              onClick={toggleMotionControl}
+              className={`px-4 py-2 rounded ${isMotionEnabled 
+                ? 'bg-green-500 text-white' 
+                : 'bg-gray-200 text-gray-700'}`}
+            >
+              {isMotionEnabled ? 'Disable Motion Control' : 'Enable Motion Control'}
+            </button>
           </div>
 
-          {/* Volume Indicator */}
-          <div className="mt-4 flex justify-center items-center">
-            <button 
-              onClick={toggleMute}
-              className="mr-2 text-gray-600 hover:text-gray-800"
-            >
-              <VolumeIcon />
-            </button>
-            <div className="w-32 bg-gray-200 rounded-full h-2">
-              <div 
-                className="bg-teal-500 h-2 rounded-full" 
-                style={{width: `${volume * 100}%`}}
-              ></div>
+          {/* Motion Intensity Indicator (Optional) */}
+          {lastAcceleration !== null && (
+            <div className="mt-2 text-center text-sm text-gray-600">
+              Current Intensity: {lastAcceleration.toFixed(2)} m/s²
             </div>
-          </div>
+          )}
           
-          {/* Progress Bar */}
-          <div 
+          {/* Existing progress bar and other components... */}
+           {/* Progress Bar */}
+           <div 
             className="mt-6 bg-gray-200 h-2 rounded-full cursor-pointer"
             onClick={handleProgressBarClick}
           >
